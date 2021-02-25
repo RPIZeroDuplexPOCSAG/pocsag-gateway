@@ -14,6 +14,10 @@ import (
 
 
 
+	"github.com/RPIZeroDuplexPOCSAG/go-pocsag/notint_ernal/datatypes"
+	"github.com/RPIZeroDuplexPOCSAG/go-pocsag/notint_ernal/pocsag"
+	//"github.com/RPIZeroDuplexPOCSAG/go-pocsag/notint_ernal/utils"
+
 	"github.com/RPIZeroDuplexPOCSAG/pocsag-gateway/settings"
 )
 var (
@@ -142,7 +146,7 @@ func main() {
 						}
 						rssiStart = rssiStart / 5
 					} else {
-						if rssiStart - rssi > 20 {
+						if rssiStart - rssi > 30 {
 							stream.Cancel = true
 						}
 						if stream.ByteCounter >	1024e2 {
@@ -154,11 +158,59 @@ func main() {
 					fmt.Printf("%x", byte)
 					break*/
 				case <-stream.Process:
-					log.Println("--PROCESS=", len(stream.ByteStream), " bytes--")
-					for i:= 0; i < len(stream.ByteStream); i++  {
-						fmt.Printf("%x", <-stream.ByteStream)
+					for i := 0; i < 5; i++ {
+						<-stream.ByteStream
 					}
+					/*for i := 0; i < 32; i++ {
+						bits = append(bits, false)
+					}*/
+					var tByte = 0
+					var bitstring = ""
+					log.Println("--PROCESS=", len(stream.ByteStream), " bytes--")
+					for i:= 0; i < len(stream.ByteStream); i++ {
+						tByte = int(<-stream.ByteStream)
+						if tByte == 0xAA && bitstring == "" {
+							continue
+						}
+						fmt.Printf("%x", tByte)
+						for BB := 7; BB > -1; BB-- {
+							// Compare bits 7-0 in byte
+							if tByte & (1 << uint(BB)) > 0 {
+								bitstring = bitstring + "1"
+							} else {
+								bitstring = bitstring + "0"
+							}
+						}
+						// bitstring = bitstring + fmt.Sprintf("%b", tByte)
+						/*bits = append(bits, datatypes.Bit(tByte & 128 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 64 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 32 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 16 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 8 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 4 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 2 > 0))
+						bits = append(bits, datatypes.Bit(tByte & 1 > 0))*/
+					}
+					// bitstring = fmt.Sprintf("%b", 0xAA)+ fmt.Sprintf("%b", 0xAA)+ fmt.Sprintf("%b", 0xAA)+ fmt.Sprintf("%b", 0xAA) + bitstring
 					fmt.Print("\n")
+					//fmt.Print(bitstring)
+					fmt.Print("\n")
+					for i := 0; i < 512; i++ {
+						bitstring = bitstring + "0"
+					}
+					var bits = make([]datatypes.Bit, len(bitstring))
+					for i, c := range bitstring {
+						if string(c) == "1" {
+							bits[i] = datatypes.Bit(true)
+						} else {
+							bits[i] = datatypes.Bit(false)
+						}
+					}
+					parsedMsgs := pocsag.ParsePOCSAG(bits, pocsag.MessageTypeAuto)
+					for _, m := range parsedMsgs {
+						log.Println(m.ReciptientString())
+						log.Println(m.PayloadString(pocsag.MessageTypeAuto))
+					}
 					log.Println("--END--")
 					break
 				}
