@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"time"
-	"sync"
+	//"sync"
 	"log"
 	"github.com/kgolding/go-pocsagencode"
 	"github.com/RPIZeroDuplexPOCSAG/rfm69"
@@ -24,43 +24,6 @@ var messageQueue []*pocsagencode.Message
 func queueMessage(msg *pocsagencode.Message) {
 	messageQueue = append(messageQueue,msg)
 }
-func main2() {
-	rabbitmq.Debug = true
-    
-    connection, err := rabbitmq.Dial(url)
-    if err != nil {
-        panic("could not establish connection with RabbitMQ:" + err.Error())
-    }
-
-	consumeCh, err := connection.Channel()
-	if err != nil {
-		log.Panic(err)
-	}
-	go func() {
-		d, err := consumeCh.Consume("input", "", false, false, false, false, nil)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		for msg := range d {
-			if msg.Headers["ric"] == nil { continue }
-			log.Printf("ric: %s", string(msg.Headers["ric"].(string)))
-			log.Printf("msg: %s", string(msg.Body))
-			queueMessage(&pocsagencode.Message {
-				Addr: uint32(msg.Headers["ric"].(int)),
-				Content: string(msg.Body),
-				IsNumeric: (msg.Headers["numeric"] != nil),
-			})
-			msg.Ack(true)
-		}
-	}()
-
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	wg.Wait()
-}
-
 
 func resetModem() {
 	pin, err := gpio.OpenPin(29, gpio.ModeOutput)
@@ -124,13 +87,18 @@ func main() {
 	rfm.RXFreq = conf.RXFreq
 
 	if err = rfm.SetModeAndWait(rfm69.RF_OPMODE_STANDBY); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	if err = rfm.SetInvert(conf.InvertBits); err != nil {
-		return err
+		panic(err)
 	}
 	//rfm.SetFrequency(466238000, 25)
 	
+	log.Println("Config")
+	log.Println("AMQP Server: ", conf.AMQPURL)
+	log.Println("Frequency Offset(Correction): ", conf.FreqOffset, "Hz")
+	log.Println("Transmit Freq: ", conf.TXFreq, "Hz @", conf.TXBaud, "bps")
+	log.Println("Receive Freq: ", conf.RXFreq, "Hz @", conf.RXBaud, "bps")
 
 	messages := []*pocsagencode.Message{
 		&pocsagencode.Message{133701, "Hello 1234567890!", false},
