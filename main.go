@@ -1,19 +1,24 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"time"
 	"sync"
 	"log"
 	"github.com/kgolding/go-pocsagencode"
 	"github.com/RPIZeroDuplexPOCSAG/rfm69"
+
 	"github.com/davecheney/gpio"
 
-    //"github.com/streadway/amqp"
 	"github.com/sirius1024/go-amqp-reconnect/rabbitmq"
-)
 
+
+
+	"github.com/RPIZeroDuplexPOCSAG/pocsag-gateway/settings"
+)
+var (
+	conf  *settings.App
+)
 var messageQueue []*pocsagencode.Message 
 
 func queueMessage(msg *pocsagencode.Message) {
@@ -21,10 +26,7 @@ func queueMessage(msg *pocsagencode.Message) {
 }
 func main2() {
 	rabbitmq.Debug = true
-    url := os.Getenv("AMQP_URL")
-    if url == "" {
-        url = "amqp://guest:guest@10.13.37.37:5672"
-	}
+    
     connection, err := rabbitmq.Dial(url)
     if err != nil {
         panic("could not establish connection with RabbitMQ:" + err.Error())
@@ -58,6 +60,8 @@ func main2() {
 
 	wg.Wait()
 }
+
+
 func resetModem() {
 	pin, err := gpio.OpenPin(29, gpio.ModeOutput)
 	defer pin.Close()
@@ -71,22 +75,62 @@ func resetModem() {
 }
 func main() {
 	resetModem()
-	rfm, err := rfm69.NewDevice(true)
+	var (
+		err error
+		rfm *rfm69.Device
+	)
+	if conf, err = settings.LoadSettings(); err != nil {
+		fmt.Errorf("Please check your .env File or Environment Vars")
+		return
+	}
+	/*** RABBITMQ ***/
+	rabbitmq.Debug = true
+    connection, err := rabbitmq.Dial(conf.AMQPURL)
+    if err != nil {
+        panic("could not establish connection with RabbitMQ:" + err.Error())
+    }
+	consumeCh, err := connection.Channel()
 	if err != nil {
+		log.Panic(err)
+	}
+	go func() {
+		d, err := consumeCh.Consume("input", "", false, false, false, false, nil)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		for msg := range d {
+			if msg.Headers["ric"] == nil { continue }
+			log.Printf("ric: %s", string(msg.Headers["ric"].(string)))
+			log.Printf("msg: %s", string(msg.Body))
+			/*queueMessage(&pocsagencode.Message {
+				Addr: uint32(msg.Headers["ric"].(int)),
+				Content: string(msg.Body),
+				IsNumeric: (msg.Headers["numeric"] != nil),
+			})*/
+			msg.Ack(true)
+		}
+	}()
+    /***** RABBITMQ END**/
+
+	if rfm, err = rfm69.NewDevice(true); err != nil {
 		log.Fatal(err)
 	}
+
+	rfm.FreqOffset = conf.FreqOffset
+	rfm.TXBaud = conf.TXBaud
+	rfm.RXBaud = conf.RXBaud
+	rfm.TXFreq = conf.TXFreq
+	rfm.RXFreq = conf.RXFreq
 
 	if err = rfm.SetModeAndWait(rfm69.RF_OPMODE_STANDBY); err != nil {
 		log.Fatal(err)
 	}
-	//rfm.WriteReg(0x25, 0x00);
-	////rfm.SetFrequency(446118750, 25)
-	rfm.SetFrequency(434230000, 25)
-	//rfm.SetFrequency(466238000, 25)
-	rfm.SetInvert(false)
-	if err = rfm.SetBaudrate(1200); err != nil {
-		panic(err)
+	if err = rfm.SetInvert(conf.InvertBits); err != nil {
+		return err
 	}
+	//rfm.SetFrequency(466238000, 25)
+	
 
 	messages := []*pocsagencode.Message{
 		&pocsagencode.Message{133701, "Hello 1234567890!", false},
@@ -95,15 +139,10 @@ func main() {
 		//&pocsagencode.Message{133704, "Hello Pager!", false},
 	}
 
-	//for i := 0; i < 1; i++ {
-	//	addr := uint32(1200000 + i*100)
-	//	messages = append(messages, &pocsagencode.Message{addr, fmt.Sprintf("Hello pager number %d", addr), false})
-	//}
-
 	log.Println("Sending", len(messages), "messages")
 	
 	var burst pocsagencode.Burst
-	for len(messages) > 0 {
+	for len(messages) > 220 {
 		burst, messages = pocsagencode.Generate(messages, pocsagencode.OptionMaxLen(6000))
 		// Options can be set as below for MaxLen and PreambleBits
 		// burst, messages = pocsagencode.Generate(messages, pocsagencode.OptionPreambleBits(250))
@@ -152,6 +191,9 @@ func main() {
 			}
 		}
 	}
+
+	rfm.PrepareRX()
+
 	rfm.Loop()
 	log.Println("Done")
 }
