@@ -21,7 +21,7 @@ var (
 var messageQueue []*pocsagencode.Message 
 
 func queueMessage(msg *pocsagencode.Message) {
-	messageQueue = append(messageQueue,msg)
+	messageQueue = append(messageQueue, msg)
 }
 
 func resetModem() {
@@ -51,18 +51,18 @@ func main() {
     if err != nil {
         panic("could not establish connection with RabbitMQ:" + err.Error())
     }
-	consumeCh, err := connection.Channel()
-	if err != nil {
-		log.Panic(err)
-	}
 	publishCh, err := connection.Channel()
 	if err != nil {
 		log.Panic(err)
 	}
 	// Only if we allow TX, we process Messages
 	if conf.TXFreq != 0 {
+		consumeCh, err := connection.Channel()
+		if err != nil {
+			log.Panic(err)
+		}
 		go func() {
-			d, err := consumeCh.Consume("input", "", false, false, false, false, nil)
+			d, err := consumeCh.Consume("tx_pocsag", "", false, false, false, false, nil)
 			if err != nil {
 				log.Panic(err)
 			}
@@ -71,11 +71,11 @@ func main() {
 				if msg.Headers["ric"] == nil { continue }
 				log.Printf("ric: %s", string(msg.Headers["ric"].(string)))
 				log.Printf("msg: %s", string(msg.Body))
-				/*queueMessage(&pocsagencode.Message {
+				queueMessage(&pocsagencode.Message {
 					Addr: uint32(msg.Headers["ric"].(int)),
 					Content: string(msg.Body),
 					IsNumeric: (msg.Headers["numeric"] != nil),
-				})*/
+				})
 				msg.Ack(true)
 			}
 		}()
@@ -110,7 +110,7 @@ func main() {
 	log.Println("Frequency Offset(Correction): ", conf.FreqOffset, "Hz")
 	log.Println("Transmit Freq: ", conf.TXFreq, "Hz @", conf.TXBaud, "bps")
 	log.Println("Receive Freq: ", conf.RXFreq, "Hz @", conf.RXBaud, "bps")
-/*
+	/*
 	messages := []*pocsagencode.Message{
 		&pocsagencode.Message{133701, "Hello 1234567890!", false},
 		//&pocsagencode.Message{133702, "Hello d2efa947-7618-440c-8f79-fab32762af8ed2bb9c62-007e-4b2c-93d5-3124a247032eefe71db4-ef8d-46fb-9cf8-dac70db000bc12067966-da61-447c-a9ce-c0c24be17df5 Pager!", false},
@@ -132,7 +132,7 @@ func main() {
 		}
 		rfm.Send(data)
 	}
-*/
+	*/
 	if conf.RXFreq != 0 {
 		rfm.OnReceive = func(stream *rfm69.RXStream) {
 			rssiMeasurementArray := make([]int, 5)
@@ -157,9 +157,6 @@ func main() {
 						}
 					}
 					break
-				/*case byte := <-stream.ByteStream:
-					fmt.Printf("%x", byte)
-					break*/
 				case <-stream.Process:
 					data := make([]byte, len(stream.ByteStream))
 					//log.Println("--PROCESS=", len(stream.ByteStream), " bytes--")
@@ -170,7 +167,7 @@ func main() {
 					err := publishCh.Publish("rx", "", false, false, amqp.Publishing{
 						ContentType: "application/octet-stream",
 						Body: data,
-						Headers: map[string]interface{}{
+						Headers: map[string]interface{} {
 							"rssi": rssiStart,
 							"len": len(data),
 						},
