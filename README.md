@@ -1,6 +1,10 @@
 # pocsag-gateway
 
 This WIP Software aims to provide an Interface for transmitting Messages sent over AMQP via an RFM69 Transceiver.
+
+## Dependencies
+- RabbitMQ Server
+
 ## Software Configuration
 Configuration works via Environment Variables or a `.env` file.
 ```
