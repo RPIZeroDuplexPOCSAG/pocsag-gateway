@@ -5,7 +5,8 @@ import (
 	"time"
 	"sync"
 	"log"
-	"github.com/kgolding/go-pocsagencode"
+	"github.com/RPIZeroDuplexPOCSAG/go-pocsagencode"
+//	"github.com/kgolding/go-pocsagencode"
 	"github.com/RPIZeroDuplexPOCSAG/rfm69"
 
 	"github.com/davecheney/gpio"
@@ -77,10 +78,15 @@ func main() {
 
 			for msg := range d {
 				if msg.Headers["ric"] == nil { continue }
-				log.Printf("ric: %s", string(msg.Headers["ric"].(int64)))
+				if msg.Headers["function"] == nil { continue }
+
+				log.Printf("ric: %d", uint32(msg.Headers["ric"].(int64)))
+				log.Printf("function %d", byte(msg.Headers["function"].(int64)))
 				log.Printf("msg: %s", string(msg.Body))
+
 				queueMessage(&pocsagencode.Message {
 					Addr: uint32(msg.Headers["ric"].(int64)),
+					Function: uint8(msg.Headers["function"].(int64)),
 					Content: string(msg.Body),
 					IsNumeric: (msg.Headers["numeric"] != nil),
 				})
@@ -175,7 +181,7 @@ func main() {
 		go func() {
 			lastTransmitBatch = time.Now().Unix()
 			for {
-				log.Println(time.Now().Unix(), lastTransmitBatch + 5)
+				//log.Println(time.Now().Unix(), lastTransmitBatch + 5)
 
 				time.Sleep(500 * time.Millisecond)
 				if len(messageQueue) > 0 && (time.Now().Unix() > lastTransmitBatch + 5) {
@@ -187,10 +193,10 @@ func main() {
 					data := &rfm69.Data{
 						Data: burst.Bytes(),
 					}
+					// Make Pocsag Burst
 					rfm.Send(data)
 					messageQueue = make([]*pocsagencode.Message, 0)
 					queueMutex.Unlock()
-					// Make Pocsag Burst
 				}
 			}
 		}()
